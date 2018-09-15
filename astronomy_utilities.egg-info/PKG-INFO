@@ -1,0 +1,11 @@
+Metadata-Version: 1.0
+Name: astronomy-utilities
+Version: 0.1
+Summary: Miscellaneous utility functions for astronomy
+Home-page: https://github.com/jmilou/astronomy_utilities
+Author: Julien Milli
+Author-email: jmilli@eso.org
+License: MIT
+Description: UNKNOWN
+Keywords: Utilities for data analysis in astronomy
+Platform: UNKNOWN

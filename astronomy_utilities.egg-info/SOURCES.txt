@@ -1,0 +1,7 @@
+setup.py
+astronomy_utilities.egg-info/PKG-INFO
+astronomy_utilities.egg-info/SOURCES.txt
+astronomy_utilities.egg-info/dependency_links.txt
+astronomy_utilities.egg-info/not-zip-safe
+astronomy_utilities.egg-info/requires.txt
+astronomy_utilities.egg-info/top_level.txt

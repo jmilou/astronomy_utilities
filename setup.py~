@@ -1,0 +1,17 @@
+from setuptools import setup, find_packages
+
+setup(
+    name='utilities',
+    version='0.1',
+    description='Miscellaneous utilities',
+    url='https://github.com/jmilou/utilities',
+    author='Julien Milli',
+    author_email='jmilli@eso.org',
+    license='MIT',
+    keywords='utilities for data analysis',
+    packages=find_packages(),
+    install_requires=[
+        'numpy', 'scipy', 'astropy', 'pandas', 'matplotlib','pandas','datetime'
+    ],
+    zip_safe=False
+)
