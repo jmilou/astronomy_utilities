@@ -2,9 +2,12 @@
 # -*- coding: utf-8 -*-
 """
 Created on Mon Aug 27 10:22:28 2018
+
 This module contains a list of functions that can be used to convert the IQ 
 measured on an instrument into the seeing at a different wavelength, airmass...
-It is based on the definition of the IQ as defined by
+It is based on the definition of the IQ as defined on the ESO webpage
+https://www.eso.org/observing/etc/doc/helpkmos.html
+by
 
 FWHM_IQ = sqrt (FWHM_ATM^2 + FWHM_TEL^2 + FWHM_INS^2)	(1)
 
@@ -53,7 +56,7 @@ def IQ2seeing(IQ1,wavelength1=1.2e-6,airmass1=1.,\
               wavelength2=500e-9,L0=20,D=8.,FWHMins=0.):
     """
     Converts the IQ measured at a given wavelength for a given airmass into 
-    a seeing, taking the telescope and instrument transfer function into accound
+    a seeing, taking the telescope and instrument transfer function into account
     as well as the atmosphere outer scale.
     Input:
         - IQ1: the image quality in arcsec

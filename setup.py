@@ -11,7 +11,7 @@ setup(
     keywords='Utilities for data analysis in astronomy',
     packages=find_packages(),
     install_requires=[
-        'numpy', 'scipy', 'astropy', 'pandas', 'matplotlib','pandas','datetime'
+        'numpy', 'sympy', 'astropy', 'astral', 'matplotlib','pandas','datetime'
     ],
     zip_safe=False
 )
