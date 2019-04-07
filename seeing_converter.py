@@ -142,5 +142,9 @@ def seeing2FWHMatm(seeing1,wavelength1=500.e-9,wavelength2=1200.e-9,L0=20,\
 
 if __name__ == '__main__':
     
-    seeing = FWHMatm2seeing(0.6,wavelength1=500e-9,wavelength2=500e-9,L0=20,\
-                   airmass1=1.,D=8.)
+#    seeing = FWHMatm2seeing(0.6,wavelength1=500e-9,wavelength2=500e-9,L0=20,\
+#                   airmass1=1.,D=8.)
+    
+    IQ = seeing2FWHMatm(0.8,wavelength1=500.e-9,wavelength2=2.1e-6,L0=20,\
+                   airmass2=1.06,D=8.)
+    print(IQ)
