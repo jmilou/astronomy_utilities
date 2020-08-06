@@ -23,7 +23,7 @@ df_filter_V = pd.read_csv(os.path.join(path,'passband_filter_V_T.csv'))
 df_filter_VBB = pd.read_csv(os.path.join(path,'passband_filter_V_T.csv'))
 
 df_filter_VBB = pd.read_csv(os.path.join(path,'passband_filter_VBB_Zimpol.csv'))
-
+    
 #df_filter_VBB.rename(columns={0: 'lambda(nm)',\
 #                1:'lambda*R(lambda)'}, inplace=True)        
 #
@@ -43,7 +43,7 @@ wave_set = np.asarray(df_filter_VBB['lambda(nm)'])*10*u.AA
 freq_set = (const.c/wave_set).to(u.Hertz)
 
 
-temperature = 9730 * u.K
+temperature = 9730 * u.K #9730 #9250
 lammin=400
 lammax=950
 #waveset = np.linspace(lammin,lammax,lammax-lammin+1)*10 * u.AA

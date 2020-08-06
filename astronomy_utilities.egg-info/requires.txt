@@ -1,7 +1,7 @@
 numpy
-scipy
+sympy
 astropy
-pandas
+astral
 matplotlib
 pandas
 datetime

@@ -1,3 +1,4 @@
+README.md
 setup.py
 astronomy_utilities.egg-info/PKG-INFO
 astronomy_utilities.egg-info/SOURCES.txt
