@@ -16,27 +16,44 @@ import astropy.units as u
 from astropy.time import Time
 from astropy.coordinates import ICRS, FK5 #,FK4, Galactic
 
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+    
 def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None):
     """
-    Function that tries to query Simbad to find the object. 
-    It first tries to see if the star name (optional argument) is resolved 
+    Function that tries to query Simbad to find the object.
+    It first tries to see if the star name (optional argument) is resolved
     by Simbad. If not it searches for the pointed position (ra and
-    dec) in a cone of radius 10 arcsec. If more than a star is detected, it 
+    dec) in a cone of radius 10 arcsec. If more than a star is detected, it
     takes the closest from the (ra,dec).
     Input:
         - date: an astropy.time.Time object (e.g. date = Time(header['DATE-OBS'])
         - name: a string with the name of the source.
-        - coords: a SkyCoord object. For instance, if we extract the keywords 
+        - coords: a SkyCoord object. For instance, if we extract the keywords
             of the fits files, we should use
             coords = SkyCoord(header['RA']*u.degree,header['DEC']*u.degree)
             SkyCoord('03h32m55.84496s -09d27m2.7312s', ICRS)
-        - limit_G_mag: the limiting G magnitude beyond which we consider the star too 
+        - limit_G_mag: the limiting G magnitude beyond which we consider the star too
             faint to be the correct target (optional, by default 15)
         - metadata : any additional information in the form of a dictionnary that
-            one wants to pass in the ouptut dictionnary 
+            one wants to pass in the ouptut dictionnary
     Output:
-        - a dictionary with the most interesting simbad keywords and the original 
+        - a dictionary with the most interesting simbad keywords and the original
             RA,DEC coordinates from the pointing position.
+            An example of output dictonnary is
+            {'simbad_MAIN_ID': "NAME Barnard's star",
+             'simbad_RA_ICRS': '17 57 48.4984', 'simbad_DEC_ICRS': '+04 41 36.113',
+             'simbad_FLUX_V': 9.51099967956543,
+             'simbad_FLUX_R': 8.29800033569336, 'simbad_FLUX_G': 8.193973541259766,
+             'simbad_FLUX_I': 6.741000175476074, 'simbad_FLUX_J': 5.24399995803833,
+             'simbad_FLUX_H': 4.829999923706055, 'simbad_FLUX_K': 4.52400016784668,
+             'simbad_ID_HD': '', 'simbad_SP_TYPE': 'M4V', 'simbad_OTYPE': 'BYDra',
+             'simbad_OTYPE_V': 'Variable of BY Dra type', 'simbad_OTYPE_3': 'BY*',
+             'simbad_PMRA': -801.551, 'simbad_PMDEC': 10362.394,
+             'simbad_RA_current': '17 57 47.3975', 'simbad_DEC_current': '+04 45 09.174',
+             'RA': '17 57 48.4998','DEC': '4 41 36.111372',
+             'simbad_separation_RADEC_ICRSJ2000': 0.02099280561643615,
+             'simbad_separation_RADEC_current': 213.69889954335432}
     """
     search_radius = 10*u.arcsec # we search in a 10arcsec circle.
     search_radius_alt = 220*u.arcsec # in case nothing is found, we enlarge the search
@@ -65,7 +82,7 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None):
             print('NGC 3603 case not implemented yet')
         elif np.logical_and('6380' in name,'ngc' in name.lower()):
             name = 'Gaia EDR3 5961801153907816832'
-        elif np.logical_and('theta' in name.lower(),'ori' in name.lower()):
+        elif np.logical_and('thet' in name.lower(),'ori' in name.lower()):
             # I still have to find the coordinate of theta Ori B1 which is the other astrometric calibrator often used. 
             name = 'tet01 Ori B'        
 
@@ -90,7 +107,6 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None):
 
     customSimbad = Simbad()
     customSimbad.add_votable_fields('flux(V)','flux(R)','flux(G)','flux(I)','flux(J)','flux(H)',\
-                                    'flux(G)','flux(J)','flux(H)',\
                                     'flux(K)','id(HD)','sp','otype','otype(V)','otype(3)',\
                                    'propermotions','ra(2;A;ICRS;J2000;2000)',\
                                  'dec(2;D;ICRS;J2000;2000)',\
@@ -108,11 +124,20 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None):
             simbad_dico  = add_separation_between_pointing_current_position(coords,simbad_dico)
             return simbad_dico
         else:
-            print('Something went wrong, there are {0:d} valid stars '.format(nb_stars))
-            return None
-
+            # the most likely problem is that the G mag does not exist.
+            # we test the V mag then
+            # stars_have_a_V_mag = np.any(np.isfinite(np.asarray(search['FLUX_V'])))
+            validSearch = search[search['FLUX_V']<limit_G_mag]
+            nb_stars = len(validSearch)
+            if nb_stars == 1:
+                simbad_dico = populate_simbad_dico(validSearch,0,simbad_dico)
+                # we add the distance between pointing and current position in the dictionnary
+                simbad_dico  = add_separation_between_pointing_current_position(coords,simbad_dico)
+                return simbad_dico
+            else:
+                print('Something went wrong, there are {0:d} valid stars '.format(nb_stars))
+                return None
     else: # in this case no name is provided
-    
         # First we do a cone search around the coordinates
         search = customSimbad.query_region(coords,radius=search_radius)
         if search is not None:
@@ -225,6 +250,24 @@ def add_separation_between_pointing_current_position(coords,simbad_dico):
         simbad_dico['simbad_separation_RADEC_current']=sep_pointing_current
         print('Distance between the current star position and pointing position: {0:.1f}arcsec'.format(simbad_dico['simbad_separation_RADEC_current']))
     return simbad_dico
+
+def is_moving_object(header):
+    """
+    Parameters
+    ----------
+    header : dictionnary
+        Header of the fits file.
+
+    Returns
+    -------
+    bool
+        True if differential tracking is used by the telescope, indicating a
+        moving target therefore not listed in Simbad.
+    """
+    if 'ESO TEL TRAK STATUS' in header.keys():
+        if 'DIFFERENTIAL' in header['HIERARCH ESO TEL TRAK STATUS']:
+            return True
+    return False
 
 if __name__ == "__main__":
     """
