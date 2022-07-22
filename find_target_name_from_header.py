@@ -136,6 +136,9 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None):
                 return simbad_dico
             else:
                 print('Something went wrong, there are {0:d} valid stars '.format(nb_stars))
+                print('The most likely reason is that the G or V mag of {0:s} is unknown.'.format(name))
+                print('To help debugging, we provide below the result of the SIMBAD search')
+                print(search)
                 return None
     else: # in this case no name is provided
         # First we do a cone search around the coordinates
