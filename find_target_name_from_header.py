@@ -15,11 +15,32 @@ from astropy.coordinates import name_resolve
 import astropy.units as u
 from astropy.time import Time
 from astropy.coordinates import ICRS, FK5 #,FK4, Galactic
+from astropy.io import fits
 
 import warnings
 warnings.filterwarnings("ignore", category=UserWarning)
-    
-def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None):
+from astropy.utils.exceptions import AstropyWarning
+warnings.simplefilter('ignore', category=AstropyWarning)
+
+import os
+path_data = os.path.join(os.path.dirname(os.path.abspath(__file__)),'data')
+
+def query_simbad_from_header(header,limit_G_mag=15,metadata=None,verbose=True):
+    """
+    Function similar to query_simbad, but using the date, coord and name extracted 
+    from the header
+    Input:
+        - header: the header of a SPHERE file
+    """
+    if is_moving_object(header):
+        print('The object is a moving target and no  information can be retrieved from Simbad')
+        return None
+    date = Time(h['DATE-OBS'])
+    coords = SkyCoord(h['RA']*u.degree,h['DEC']*u.degree)
+    name = h['OBJECT']
+    return query_simbad(date,coords,name=name,limit_G_mag=limit_G_mag,metadata=metadata,verbose=verbose)
+
+def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None,verbose=True):
     """
     Function that tries to query Simbad to find the object.
     It first tries to see if the star name (optional argument) is resolved
@@ -28,11 +49,11 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None):
     takes the closest from the (ra,dec).
     Input:
         - date: an astropy.time.Time object (e.g. date = Time(header['DATE-OBS'])
-        - name: a string with the name of the source.
         - coords: a SkyCoord object. For instance, if we extract the keywords
             of the fits files, we should use
             coords = SkyCoord(header['RA']*u.degree,header['DEC']*u.degree)
             SkyCoord('03h32m55.84496s -09d27m2.7312s', ICRS)
+        - name: a string with the name of the source.
         - limit_G_mag: the limiting G magnitude beyond which we consider the star too
             faint to be the correct target (optional, by default 15)
         - metadata : any additional information in the form of a dictionnary that
@@ -59,7 +80,8 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None):
     search_radius_alt = 220*u.arcsec # in case nothing is found, we enlarge the search
         # we use 210 arcsec because Barnard star (higher PM star moves by 10arcsec/yr --> 220 arcsec in 22yrs)
 
-    if coords.ndim>0: # if coords is an array of SkyCoord we only take the 2st element to avoid issues with arrays.
+    if coords.ndim>0: # if coords is an array of SkyCoord we only take the 1st element to avoid issues with arrays.
+        print('Warning, coords is an array of SkyCoord and we only consider the 1st element')
         coords = coords[0]
 
     # The output of the function is simbad_dico.
@@ -122,6 +144,8 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None):
             simbad_dico = populate_simbad_dico(validSearch,0,simbad_dico)
             # we add the distance between pointing and current position in the dictionnary
             simbad_dico  = add_separation_between_pointing_current_position(coords,simbad_dico)
+            if verbose:
+                print_dico_results(simbad_dico)
             return simbad_dico
         else:
             # the most likely problem is that the G mag does not exist.
@@ -188,6 +212,8 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None):
                   validSearch['MAIN_ID'][i_min],validSearch['FLUX_G'][i_min],min_sep))
         simbad_dico = populate_simbad_dico(validSearch,i_min,simbad_dico)
         simbad_dico = add_separation_between_pointing_current_position(coords,simbad_dico)
+        if verbose:
+            print_dico_results(simbad_dico)
         return simbad_dico
 
 def populate_simbad_dico(simbad_search_list,i,simbad_dico):
@@ -272,23 +298,46 @@ def is_moving_object(header):
             return True
     return False
 
+def print_dico_results(dico):
+    """
+    Ancilliary function that prints on screen the information contained in a dictionnary
+    """
+    if dico is not None:
+        for index,key in enumerate(dico):
+            print(key,dico[key])
+    return
+
 if __name__ == "__main__":
     """
     This is just an example of how the script can be used
     """
 
+    print('\n\n','-'*20)
     ra = 10.*u.degree
     dec = -24*u.degree
     testCoord = SkyCoord(ra,dec)
     date = Time('2017-01-01T02:00:00.0')
     test=query_simbad(date,testCoord,name='eps Eri',limit_G_mag=15)
-    print(test)
+    # for index,key in enumerate(test):
+    #     print(key,test[key])
     
+    print('\n\n','-'*20)
     # the following example uses real data from the observations of Barnard's star in 2019. 
     # it shows that the pointing coordinate (displayed as RA and DEC in the header) correspond
     # to the current coordinates at the time of observations and are not corrected by proper motion
     testCoord = SkyCoord('17:57:47.3 +04:44:59.0', frame=ICRS, unit=(u.hourangle, u.deg))
     date = Time('2019-08-07T01:16:53.3630')
     test=query_simbad(date,testCoord,name='Barnard',limit_G_mag=15)
-    print(test)
     
+
+    print('\n\n','-'*20)
+    h = fits.getheader(os.path.join(path_data,'SPHER.2019-04-01T03-39-17.958IRD_SCIENCE_DBI_RAW.fits'))
+    test = query_simbad_from_header(h)
+    # hdu = fits.PrimaryHDU(header=h)
+    # hdu.writeto(os.path.join(path_data,'SPHER.2019-04-01T03-39-17.958IRD_SCIENCE_DBI_RAW.fits'),output_verify='ignore')
+    
+    
+    print('\n\n','-'*20)
+    h = fits.getheader(os.path.join(path_data,'SPHER.2019-02-25T03-55-45.738ZPL_SCIENCE_IMAGING_RAW.fits'))
+    test = query_simbad_from_header(h)
+        

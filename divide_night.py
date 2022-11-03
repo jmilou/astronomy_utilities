@@ -17,10 +17,9 @@ It makes use of numpy and astral package, and is set up for Paranal only.
 
 import numpy as np
 import astral, datetime
+from astral.sun import sun
 
-
-paranal_astral = astral.Location(info=("Paranal", "Chile", -24.6268,-70.4045, "Etc/UTC",2648.0))
-paranal_astral.solar_depression = "astronomical"
+paranal_astral_observer =  astral.Observer(-24.6268,-70.4045,2635)
 # "civil" means 6 degrees below the horizon, is the default
 # value for computing dawn and dusk. "nautical" means 12 degrees
 # and "astronomical" means 18 degrees
@@ -39,8 +38,8 @@ else:
 
 print('The date of observation is set to {0:s}\n'.format(day.isoformat()))
 
-result_today    = paranal_astral.sun(date=day)
-result_tomorrow = paranal_astral.sun(date=day + datetime.timedelta(1))
+result_today    = sun(paranal_astral_observer, date=day, tzinfo="Etc/UTC",dawn_dusk_depression=18) # paranal_astral.sun(date=day)
+result_tomorrow = sun(paranal_astral_observer, date=day + datetime.timedelta(1), tzinfo="Etc/UTC",dawn_dusk_depression=18) #paranal_astral.sun(date=day + datetime.timedelta(1))
 midnight        = result_today['dusk']+(result_tomorrow['dawn']-result_today['dusk'])/2.
 
 print('Sunset                   : {0:s}'.format(result_today['sunset'].isoformat()))
