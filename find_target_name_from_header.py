@@ -2,12 +2,12 @@
 # -*- coding: utf-8 -*-
 """
 Created on Mon Feb 21 16:22:00 2022
+
 @author: millij
 modified by Johan M with verbose option to avoid printing
 modified by Vito S to resolve some targets not found in Gaia/2MASS/JC-based archives
 """
 
-from sre_parse import Verbose
 import numpy as np
 from astroquery.simbad import Simbad
 from astropy.coordinates import SkyCoord
@@ -15,8 +15,31 @@ from astropy.coordinates import name_resolve
 import astropy.units as u
 from astropy.time import Time
 from astropy.coordinates import ICRS, FK5 #,FK4, Galactic
+from astropy.io import fits
+
 import warnings
-warnings.filterwarnings("ignore")
+warnings.filterwarnings("ignore", category=UserWarning)
+from astropy.utils.exceptions import AstropyWarning
+warnings.simplefilter('ignore', category=AstropyWarning)
+
+import os
+
+def query_simbad_from_header(header,limit_G_mag=15,metadata=None,verbose=True):
+    """
+    Function similar to query_simbad, but using the date, coord and name extracted 
+    from the header
+    Input:
+        - header: the header of a SPHERE file
+    """
+    if is_moving_object(header):
+        print('The object is a moving target and no  information can be retrieved from Simbad')
+        return None
+    date = Time(h['DATE-OBS'])
+    coords = SkyCoord(h['RA']*u.degree,h['DEC']*u.degree)
+    name = h['OBJECT']
+    return query_simbad(date,coords,name=name,limit_G_mag=limit_G_mag,metadata=metadata,verbose=verbose)
+
+
 
 def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None,force_cm=False,verbose = False):
     """
@@ -35,7 +58,7 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None,force_cm=Fal
         - limit_G_mag: the limiting G magnitude beyond which we consider the star too 
             faint to be the correct target (optional, by default 15)
         - metadata: any additional information in the form of a dictionary that
-            one wants to pass in the ouptut dictionnary 
+            one wants to pass in the ouptut dictionary 
         - force_cm: if True, does not discard a cross-match that has no available  
             photometry in Simbad (optional, by default False)
     Output:
@@ -99,7 +122,7 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None,force_cm=Fal
     customSimbad = Simbad()
     customSimbad.add_votable_fields('flux(U)','flux(B)','flux(V)','flux(R)',\
                                     'flux(I)','flux(G)','flux(J)','flux(H)',\
-                                    'flux(K)','id(HD)','sp','otype','otype(V)','otype(3)',\
+                                    'id(HD)','sp','otype','otype(V)','otype(3)',\
                                    'propermotions','ra(2;A;ICRS;J2000;2000)',\
                                  'dec(2;D;ICRS;J2000;2000)',\
                                  'ra(2;A;FK5;J{0:.3f};2000)'.format(date.jyear),\
@@ -113,9 +136,9 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None,force_cm=Fal
             search = customSimbad.query_object(name)
             
         if type(search)!=type(None):
-            filter_cols = ['FLUX_G', 'FLUX_J', 'FLUX_H', 'FLUX_K', 'FLUX_U', 'FLUX_B', 'FLUX_V', 'FLUX_R', 'FLUX_I']
+            filter_cols = ['FLUX_G', 'FLUX_V', 'FLUX_R','FLUX_U', 'FLUX_B','FLUX_I','FLUX_J', 'FLUX_H']
             nb_stars, i = 0, 0
-            while (nb_stars==0) & (i<9): # if the star is fainter than that, it's likely not the one we are looking for
+            while (nb_stars==0) & (i<len(filter_cols)): # if the star is fainter than that, it's likely not the one we are looking for
                 validSearch = search[search[filter_cols[i]]<limit_G_mag]
                 nb_stars = len(validSearch)
                 i+=1
@@ -134,7 +157,7 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None,force_cm=Fal
         if nb_stars == 1:
             simbad_dico = populate_simbad_dico(validSearch,0,simbad_dico)
             # we add the distance between pointing and current position in the dictionary
-            simbad_dico  = add_separation_between_pointing_current_position(coords,simbad_dico)
+            simbad_dico  = add_separation_between_pointing_current_position(coords,simbad_dico,verbose=verbose)
             return simbad_dico
         else:
             if verbose:
@@ -192,7 +215,9 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None,force_cm=Fal
                 print('The closest star is: {0:s} with G={1:.1f} at {2:.2f} arcsec'.format(\
                   validSearch['MAIN_ID'][i_min],validSearch['FLUX_G'][i_min],min_sep))
         simbad_dico = populate_simbad_dico(validSearch,i_min,simbad_dico)
-        simbad_dico = add_separation_between_pointing_current_position(coords,simbad_dico)
+        simbad_dico = add_separation_between_pointing_current_position(coords,simbad_dico,verbose=verbose)
+        if verbose:
+            print_dico_results(simbad_dico)        
         return simbad_dico
 
 def populate_simbad_dico(simbad_search_list,i,simbad_dico):
@@ -204,7 +229,8 @@ def populate_simbad_dico(simbad_search_list,i,simbad_dico):
     for key in simbad_search_list.keys():
         if key in ['MAIN_ID','SP_TYPE','ID_HD','OTYPE','OTYPE_V','OTYPE_3']: #strings
             simbad_dico['simbad_'+key] = simbad_search_list[key][i]
-        elif key in ['FLUX_G', 'FLUX_J', 'FLUX_H', 'FLUX_K','PMDEC','PMRA']: #floats
+        elif key in ['FLUX_V','FLUX_R','FLUX_I','FLUX_G',\
+                     'FLUX_J', 'FLUX_H', 'FLUX_K','PMDEC','PMRA']: #floats
             simbad_dico['simbad_'+key] = float(simbad_search_list[key][i])
         elif key.startswith('RA_2_A_FK5_'): 
             simbad_dico['simbad_RA_current'] = simbad_search_list[key][i]      
@@ -216,14 +242,14 @@ def populate_simbad_dico(simbad_search_list,i,simbad_dico):
             simbad_dico['simbad_DEC_ICRS'] = simbad_search_list[key][i]     
     return simbad_dico
 
-def add_separation_between_pointing_current_position(coords,simbad_dico, verbose = False):
+def add_separation_between_pointing_current_position(coords,simbad_dico,verbose=False):
     """
     Input: 
         - coords: a SkyCoord object. For instance, if we extract the keywords 
             of the fits files, we should use
             coords = SkyCoord(header['RA']*u.degree,header['DEC']*u.degree)
             SkyCoord('03h32m55.84496s -09d27m2.7312s', ICRS)
-        - simbad_dico is a dictionnary containing the keys 
+        - simbad_dico is a dictionary containing the keys 
             ['simbad_MAIN_ID',
              'simbad_SP_TYPE',
              'simbad_ID_HD',
@@ -242,7 +268,7 @@ def add_separation_between_pointing_current_position(coords,simbad_dico, verbose
              'simbad_simbad_DEC_ICRS']
     The function adds the keys simbad_separation_RADEC_ICRSJ2000 and simbad_separation_RADEC_current
     corresponding to the distance between pointing and ICRS and current coordinates    
-    It returns the updated dictionnary
+    It returns the updated dictionary
     """
     if 'simbad_RA_ICRS' in simbad_dico.keys() and 'simbad_DEC_ICRS' in simbad_dico.keys():
         coords_ICRS_str = ' '.join([simbad_dico['simbad_RA_ICRS'],simbad_dico['simbad_DEC_ICRS']])
@@ -259,19 +285,65 @@ def add_separation_between_pointing_current_position(coords,simbad_dico, verbose
             print('Distance between the current star position and pointing position: {0:.1f}arcsec'.format(simbad_dico['simbad_separation_RADEC_current']))
     return simbad_dico
 
+def is_moving_object(header):
+    """
+    Parameters
+    ----------
+    header : dictionary
+        Header of the fits file.
+
+    Returns
+    -------
+    bool
+        True if differential tracking is used by the telescope, indicating a
+        moving target therefore not listed in Simbad.
+    """
+    if 'ESO TEL TRAK STATUS' in header.keys():
+        if 'DIFFERENTIAL' in header['HIERARCH ESO TEL TRAK STATUS']:
+            return True
+    return False
+
+def print_dico_results(dico):
+    """
+    Ancilliary function that prints on screen the information contained in a dictionary
+    """
+    if dico is not None:
+        for index,key in enumerate(dico):
+            print(key,dico[key])
+    return
+
 if __name__ == "__main__":
     """
     This is just an example of how the script can be used
     """
 
-    # ra = 10.*u.degree
-    # dec = -24*u.degree
-    # testCoord = SkyCoord(ra,dec)
-    # date = Time('2017-01-01T02:00:00.0')
-    # test=query_simbad(date,testCoord,name='eps Eri',limit_G_mag=15)
-    # print(test)
+    path_data = os.path.join(os.path.dirname(os.path.abspath(__file__)),'data')
     
-    testCoord = SkyCoord(['09 23 47.1 +20 21 52.034'], frame=ICRS, unit=(u.hourangle, u.deg))
-    date = Time('2017-07-08T02:00:00.0')
-    test=query_simbad(date,testCoord,name='beta Pictoris',limit_G_mag=15)
-    print(test["simbad_MAIN_ID"])
+    print('\n\n','-'*20)
+    ra = 10.*u.degree
+    dec = -24*u.degree
+    testCoord = SkyCoord(ra,dec)
+    date = Time('2017-01-01T02:00:00.0')
+    test=query_simbad(date,testCoord,name='eps Eri',limit_G_mag=15)
+    # for index,key in enumerate(test):
+    #     print(key,test[key])
+    
+    print('\n\n','-'*20)
+    # the following example uses real data from the observations of Barnard's star in 2019. 
+    # it shows that the pointing coordinate (displayed as RA and DEC in the header) correspond
+    # to the current coordinates at the time of observations and are not corrected by proper motion
+    testCoord = SkyCoord('17:57:47.3 +04:44:59.0', frame=ICRS, unit=(u.hourangle, u.deg))
+    date = Time('2019-08-07T01:16:53.3630')
+    test=query_simbad(date,testCoord,name='Barnard',limit_G_mag=15)
+    
+
+    print('\n\n','-'*20)
+    h = fits.getheader(os.path.join(path_data,'SPHER.2019-04-01T03-39-17.958IRD_SCIENCE_DBI_RAW.fits'))
+    test = query_simbad_from_header(h)
+    # hdu = fits.PrimaryHDU(header=h)
+    # hdu.writeto(os.path.join(path_data,'SPHER.2019-04-01T03-39-17.958IRD_SCIENCE_DBI_RAW.fits'),output_verify='ignore')
+    
+    
+    print('\n\n','-'*20)
+    h = fits.getheader(os.path.join(path_data,'SPHER.2019-02-25T03-55-45.738ZPL_SCIENCE_IMAGING_RAW.fits'))
+    test = query_simbad_from_header(h)
