@@ -122,7 +122,8 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None,force_cm=Fal
     customSimbad = Simbad()
     customSimbad.add_votable_fields('flux(U)','flux(B)','flux(V)','flux(R)',\
                                     'flux(I)','flux(G)','flux(J)','flux(H)',\
-                                    'id(HD)','sp','otype','otype(V)','otype(3)',\
+                                    'flux(K)','id(HD)','sp','otype',\
+                                    'otype(V)','otype(3)',\
                                    'propermotions','ra(2;A;ICRS;J2000;2000)',\
                                  'dec(2;D;ICRS;J2000;2000)',\
                                  'ra(2;A;FK5;J{0:.3f};2000)'.format(date.jyear),\
