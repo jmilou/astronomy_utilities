@@ -509,7 +509,7 @@ def add_separation_between_pointing_current_position(coords,simbad_dico,verbose=
                 if simbad_dico['simbad_RA_current'][i]!='':
                     coords_current_str = ' '.join([simbad_dico['simbad_RA_current'][i],simbad_dico['simbad_DEC_current'][i]])
                     coords_current = SkyCoord(coords_current_str,frame=ICRS,unit=(u.hourangle,u.deg))
-                    sep_pointing_current.append(separation(coords_current).to(u.arcsec).value)
+                    sep_pointing_current.append(coords[i].separation(coords_current).to(u.arcsec).value)
                 else: sep_pointing_current.append(np.nan)
             simbad_dico['simbad_separation_RADEC_current']=sep_pointing_current
             if verbose:
