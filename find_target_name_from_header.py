@@ -35,7 +35,7 @@ def query_simbad_from_header(header,limit_G_mag=15,metadata=None,verbose=True):
         - header: the header of a SPHERE file
     """
     if is_moving_object(header):
-        print('The object is a moving target and no  information can be retrieved from Simbad')
+        print('The object is a moving target and no information can be retrieved from Simbad')
         return None
     date = Time(h['DATE-OBS'])
     coords = SkyCoord(h['RA']*u.degree,h['DEC']*u.degree)
@@ -65,7 +65,7 @@ def get_best_id(simbad_table,pref_order):
                 while j<len(id_list):
                     match = re.match('.*\s{1}[a-zA-Z]{3}$',id_list[j])
                     if match:
-                        best_ids.append(match.group(0))
+                        best_ids.append(" ".join(match.group(0).split()))
                         break
                     j+=1
                 if match: break
@@ -78,7 +78,7 @@ def get_best_id(simbad_table,pref_order):
                     match = re.match("[a-zA-z]{4,20}\s*[a-zA-z]*\s*[a-zA-z]*\s*",id_list[j])
                     break_cycle = False
                     if (type(match1)==type(None)) & (type(match2)==type(None)) & (type(match)!=type(None)):
-                        best_ids.append(id_list[j])
+                        best_ids.append(" ".join(id_list[j].split()))
                         break_cycle = True
                         break
                     j+=1
@@ -87,11 +87,11 @@ def get_best_id(simbad_table,pref_order):
             else:
                 ww,=np.where(np.char.find(id_list,pref_order[pref_i])!=-1)
                 if len(ww)>=1:
-                    best_ids.append(id_list[ww[0]])
+                    best_ids.append(" ".join(id_list[ww[0]].split()))
                     break
                 else:
                     pref_i+=1
-        if pref_i==len(pref_order): best_ids.append(default_names[i])
+        if pref_i==len(pref_order): best_ids.append(" ".join(default_names[i].split()))
 
     return best_ids
 
@@ -509,7 +509,7 @@ def add_separation_between_pointing_current_position(coords,simbad_dico,verbose=
                 if simbad_dico['simbad_RA_current'][i]!='':
                     coords_current_str = ' '.join([simbad_dico['simbad_RA_current'][i],simbad_dico['simbad_DEC_current'][i]])
                     coords_current = SkyCoord(coords_current_str,frame=ICRS,unit=(u.hourangle,u.deg))
-                    sep_pointing_current.append(separation(coords_current).to(u.arcsec).value)
+                    sep_pointing_current.append(coords[i].separation(coords_current).to(u.arcsec).value)
                 else: sep_pointing_current.append(np.nan)
             simbad_dico['simbad_separation_RADEC_current']=sep_pointing_current
             if verbose:
