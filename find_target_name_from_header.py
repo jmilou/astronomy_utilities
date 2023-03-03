@@ -35,7 +35,7 @@ def query_simbad_from_header(header,limit_G_mag=15,metadata=None,verbose=True):
         - header: the header of a SPHERE file
     """
     if is_moving_object(header):
-        print('The object is a moving target and no  information can be retrieved from Simbad')
+        print('The object is a moving target and no information can be retrieved from Simbad')
         return None
     date = Time(h['DATE-OBS'])
     coords = SkyCoord(h['RA']*u.degree,h['DEC']*u.degree)
@@ -65,7 +65,7 @@ def get_best_id(simbad_table,pref_order):
                 while j<len(id_list):
                     match = re.match('.*\s{1}[a-zA-Z]{3}$',id_list[j])
                     if match:
-                        best_ids.append(match.group(0))
+                        best_ids.append(" ".join(match.group(0).split()))
                         break
                     j+=1
                 if match: break
@@ -78,7 +78,7 @@ def get_best_id(simbad_table,pref_order):
                     match = re.match("[a-zA-z]{4,20}\s*[a-zA-z]*\s*[a-zA-z]*\s*",id_list[j])
                     break_cycle = False
                     if (type(match1)==type(None)) & (type(match2)==type(None)) & (type(match)!=type(None)):
-                        best_ids.append(id_list[j])
+                        best_ids.append(" ".join(id_list[j].split()))
                         break_cycle = True
                         break
                     j+=1
@@ -87,11 +87,11 @@ def get_best_id(simbad_table,pref_order):
             else:
                 ww,=np.where(np.char.find(id_list,pref_order[pref_i])!=-1)
                 if len(ww)>=1:
-                    best_ids.append(id_list[ww[0]])
+                    best_ids.append(" ".join(id_list[ww[0]].split()))
                     break
                 else:
                     pref_i+=1
-        if pref_i==len(pref_order): best_ids.append(default_names[i])
+        if pref_i==len(pref_order): best_ids.append(" ".join(default_names[i].split()))
 
     return best_ids
 
@@ -205,6 +205,8 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None,force_cm=Fal
             elif np.logical_and('theta' in name_i.lower(),'ori' in name_i.lower()):
                 # I still have to find the coordinate of theta Ori B1 which is the other astrometric calibrator often used. 
                 name_i = 'tet01 Ori B'
+            elif name_i.lower()=='barnard':
+                name_i ='Barnard star'
             if name_i.startswith('NAME '):
                 name_i=name_i[5:]
             if name_i.startswith('Vstar '):
@@ -216,6 +218,11 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None,force_cm=Fal
                 name_i=name_i[:-1]
                 if verbose:
                     print('Warning! Wrong identifier detected: a planet ({0}) was used instead of its star ({1}). Fixing...'.format(wrong_name,name_i))
+            if '2MASS' in name_i:
+                match1 = re.match('2MASS*\s',name_i)
+                match2 = re.match('2MASS*\s+J',name_i)
+                if (type(match1)!=type(None)) & (type(match2)==type(None)):
+                    name_i = " J".join(name_i.split())
 
             # then we try to resolve the name of the object directly.
             try:
@@ -273,9 +280,10 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None,force_cm=Fal
 
             RA1, DEC1 = [], []
             for i in range(n_obj):
-                if name[i]!='None':
+                RA0 = search['RA_2_A_ICRS_J2000_2000'][i]
+                if (name[i]!='None') & (RA0!=''):
                     dt=(Time(date[i])-Time('J2000.0')).jd*u.day.to(u.yr)
-                    RA0, DEC0, PMRA0, PMDEC0 = search['RA_2_A_ICRS_J2000_2000'][i], search['DEC_2_D_ICRS_J2000_2000'][i],\
+                    DEC0, PMRA0, PMDEC0 = search['DEC_2_D_ICRS_J2000_2000'][i],\
                     search['PMRA'][i], search['PMDEC'][i]
                     coo=SkyCoord(ra=RA0,dec=DEC0,unit=(u.hourangle,u.deg),frame='icrs')
                     coo1=SkyCoord(ra=coo.ra+PMRA0*u.mas/u.yr*dt*u.yr,dec=coo.dec+PMDEC0*u.mas/u.yr*dt*u.yr,frame='icrs')
@@ -284,6 +292,11 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None,force_cm=Fal
                     dec1_string = coo1_string[1].replace('d',' ').replace('m',' ').replace('s','').split('.')
                     RA1.append(ra1_string[0]+str(round(float('0.'+ra1_string[1]), 4))[1:])
                     DEC1.append(dec1_string[0]+str(round(float('0.'+dec1_string[1]), 4))[1:])
+                elif (name[i]!='None') & (RA0==''):
+                    RA1.append('')
+                    DEC1.append('')
+                    if verbose:
+                        print('Object {} was resolved by the CDS, but was not found on Simbad'.format(name[i]))
                 else:
                     RA1.append('')
                     DEC1.append('')
@@ -571,13 +584,22 @@ if __name__ == "__main__":
     testCoord = SkyCoord('17:57:47.3 +04:44:59.0', frame=ICRS, unit=(u.hourangle, u.deg))
     date = Time('2019-08-07T01:16:53.3630')
     print("Let's query a star at ra={0:s} dec={1:s} observed on {2:s}\n".format(testCoord.ra,testCoord.dec,str(date)))
-    test=query_simbad(date,testCoord,name='Barnard',limit_G_mag=15)    
-
+    test=query_simbad(date,testCoord,name='Barnard',limit_G_mag=15)
+    
+    print('\n\n','-'*20)    
+    ra = 6.01*u.degree
+    dec = -72.09*u.degree
+    name='47 Tuc'
+    testCoord = SkyCoord(ra,dec)
+    date = Time('2017-01-01T02:00:00.0')
+    print("Let's query 47 Tuc at ra={0:s} dec={1:s} with the name {2:s} and see what's happening\n".format(testCoord.ra,testCoord.dec,name))
+    test=query_simbad(date,testCoord,name=name,limit_G_mag=15,verbose=True)
+    
     print('\n\n','-'*20)
     h = fits.getheader(os.path.join(path_data,'SPHER.2019-04-01T03-39-17.958IRD_SCIENCE_DBI_RAW.fits'))
     print("Let's query a target from a real SPHERE header\n")
     test = query_simbad_from_header(h)
-        
+
     print('\n\n','-'*20)
     h = fits.getheader(os.path.join(path_data,'SPHER.2019-02-25T03-55-45.738ZPL_SCIENCE_IMAGING_RAW.fits'))
     print("Let's query a target from a real SPHERE header (a moving target in this case) \n")
