@@ -569,10 +569,11 @@ if __name__ == "__main__":
     print('\n\n','-'*20)
     ra = 10.*u.degree
     dec = -24*u.degree
+    name='eps Eri'
     testCoord = SkyCoord(ra,dec)
     date = Time('2017-01-01T02:00:00.0')
     print("Let's query a random coordinates ra={0:s} dec={1:s} with the name {2:s} and see what's happening\n".format(testCoord.ra,testCoord.dec,name))
-    test=query_simbad(date,testCoord,name='eps Eri',limit_G_mag=15)
+    test=query_simbad(date,testCoord,name=name,limit_G_mag=15,verbose=True)
     # for index,key in enumerate(test):
     #     print(key,test[key])
     
@@ -598,8 +599,18 @@ if __name__ == "__main__":
     h = fits.getheader(os.path.join(path_data,'SPHER.2019-04-01T03-39-17.958IRD_SCIENCE_DBI_RAW.fits'))
     print("Let's query a target from a real SPHERE header\n")
     test = query_simbad_from_header(h)
-    
+
     print('\n\n','-'*20)
     h = fits.getheader(os.path.join(path_data,'SPHER.2019-02-25T03-55-45.738ZPL_SCIENCE_IMAGING_RAW.fits'))
     print("Let's query a target from a real SPHERE header (a moving target in this case) \n")
     test = query_simbad_from_header(h)
+    
+    print('\n\n','-'*20)    
+    ra = 6.01*u.degree
+    dec = -72.09*u.degree
+    name='47 Tuc'
+    testCoord = SkyCoord(ra,dec)
+    date = Time('2017-01-01T02:00:00.0')
+    print("Let's query 47 Tuc at ra={0:s} dec={1:s} with the name {2:s} and see what's happening\n".format(testCoord.ra,testCoord.dec,name))
+    test=query_simbad(date,testCoord,name=name,limit_G_mag=15,verbose=True)
+    
