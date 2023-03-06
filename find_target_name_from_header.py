@@ -191,7 +191,7 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None,force_cm=Fal
         for j in ['a','b','c','d','e','f','g','h']: planet_ends.extend([i+j for i in planet_nums])
         
         for i in range(n_obj):
-            name_i = name[i]
+            name_i = str(name[i])
             coord = coords if n_obj==1 else coords[i]
             # here we can handle special cases where the object name is 47 Tuc for instance
             if np.logical_and('47' in name_i,'tuc' in name_i.lower()):
@@ -254,9 +254,11 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None,force_cm=Fal
     for j in ['A','B','C','D','E','F']: binary_ends.extend([i+j for i in binary_nums])
     bin_flag = np.zeros(n_obj,dtype=str)
     for j in range(n_obj):
-        if name[j][-2:] in binary_ends:
-            bin_flag[j]=name[j][-1]
+        if name[j] is not None:
+            if name[j][-2:] in binary_ends:
+                bin_flag[j]=name[j][-1]
 
+    name = name.astype(str)
     if name is not None:
 
         if n_obj==1:
