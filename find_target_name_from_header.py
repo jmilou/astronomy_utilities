@@ -258,8 +258,8 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None,force_cm=Fal
             if name[j][-2:] in binary_ends:
                 bin_flag[j]=name[j][-1]
 
-    name = name.astype(str)
     if name is not None:
+        name = name.astype(str)
 
         if n_obj==1:
 
@@ -371,6 +371,13 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None,force_cm=Fal
                 return simbad_dico
 
     else: # in this case no name is provided
+        customSimbad.add_votable_fields('typed_id','ids','flux(U)','flux(B)','flux(V)','flux(R)',\
+                                        'flux(I)','flux(G)','flux(J)','flux(H)',\
+                                        'flux(K)','id(HD)','sp','otype','otype(V)','otype(3)',\
+                                       'propermotions','ra(2;A;ICRS;J2000;2000)',\
+                                     'dec(2;D;ICRS;J2000;2000)',\
+                                     'ra(2;A;FK5;J{0:.3f};2000)'.format(date.jyear),\
+                                     'dec(2;D;FK5;J{0:.3f};2000)'.format(date.jyear))
     
         # First we do a cone search around the coordinates
         search = customSimbad.query_region(coords,radius=search_radius)
@@ -401,6 +408,8 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None,force_cm=Fal
                 if verbose:
                     print('One star found: {0:s} with G={1:.1f}'.format(\
                         validSearch['MAIN_ID'][i_min],validSearch['FLUX_G'][i_min]))
+                best_names=get_best_id(validSearch,pref_order)
+                validSearch['BEST_NAME'] = best_names
             else:
                 print('{0:d} stars identified within {1:.0f} or {2:.0f} arcsec'.format(nb_stars,search_radius.value,search_radius_alt.value)) 
                 print('Target not resolved or not in the list. Selecting the closest star.')
@@ -420,6 +429,9 @@ def query_simbad(date,coords,name=None,limit_G_mag=15,metadata=None,force_cm=Fal
                 min_sep = np.min(sep_list)
                 print('The closest star is: {0:s} with G={1:.1f} at {2:.2f} arcsec'.format(\
                   validSearch['MAIN_ID'][i_min],validSearch['FLUX_G'][i_min],min_sep))
+                best_names=get_best_id(validSearch,pref_order)
+                validSearch['BEST_NAME'] = best_names 
+                
         simbad_dico = populate_simbad_dico(validSearch,i_min,simbad_dico)
         simbad_dico = add_separation_between_pointing_current_position(coords,simbad_dico,verbose=verbose)
         if verbose:
