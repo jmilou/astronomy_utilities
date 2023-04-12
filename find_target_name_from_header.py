@@ -522,7 +522,7 @@ def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_c
     # and compute the number of input objects
     None_type = type(None)
     if type(name) not in [None_type,str,np.ndarray,list]:
-        raise TypeError("'name' must be of type str, None or numpy.ndarray.")
+        raise TypeError("'name' must be of type str, None, list or numpy.ndarray.")
     if type(coords) != SkyCoord:
         raise TypeError("'coords' must be a SkyCoord instance.")
     if type(date) != Time:
