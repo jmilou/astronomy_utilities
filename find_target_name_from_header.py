@@ -170,7 +170,7 @@ def _get_best_id(simbad_table,pref_order):
 
     return best_ids
 
-def _fix_binaries(table,objects,bin_flag,SimbadQuery,verbose=False):
+def _fix_fake_binaries(table,objects,bin_flag,SimbadQuery,verbose=False):
     """
     Method not supposed to be used outside the query_simbad method
     Handles binary components that were not resolved by a Simbad query, trying to add the
@@ -272,7 +272,7 @@ def _query_simbad_from_coords(date,coords,force_verbose=None,**kwargs):
     customSimbad.TIMEOUT = 600    
     customSimbad.add_votable_fields('typed_id','ids','flux(U)','flux(B)','flux(V)','flux(R)',\
                                     'flux(I)','flux(G)','flux(J)','flux(H)',\
-                                    'flux(K)','id(HD)','sp','otype','otype(V)','otype(3)',\
+                                    'flux(K)','sp','otype','otype(V)','otype(3)',\
                                    'parallax','propermotions','ra(2;A;ICRS;J2000;2000)',\
                                  'dec(2;D;ICRS;J2000;2000)',\
                                  'ra(2;A;FK5;J{0:.3f};2000)'.format(date.jyear),\
@@ -530,7 +530,7 @@ def _find_and_delete_binary_ending(string):
         return l, bin_flag
     else: raise TypeError('Only string or list is a valid input type.')
 
-def _fix_binary_names(old_search,pref_order):
+def _fix_real_binaries(old_search,pref_order,simbad_instance):
     """
     Method not supposed to be used outside the query_simbad method
     Identifies binary stars with both an 'AB' and an 'A' entry
@@ -545,15 +545,7 @@ def _fix_binary_names(old_search,pref_order):
     previous_ids = old_search['IDS']
     n = len(previous_ids)
     
-    customSimbad = Simbad()
-    customSimbad.TIMEOUT = 600    
-    customSimbad.add_votable_fields('typed_id','ids','flux(U)','flux(B)','flux(V)','flux(R)',\
-                                'flux(I)','flux(G)','flux(J)','flux(H)',\
-                                'flux(K)','id(HD)','sp','otype','otype(V)','otype(3)',\
-                               'parallax','propermotions','ra(2;A;ICRS;J2000;2000)',\
-                             'dec(2;D;ICRS;J2000;2000)')     
-
-    result = customSimbad.query_region(coords, radius=10*u.arcsec)
+    result = simbad_instance.query_region(coords, radius=10*u.arcsec)
     best_ids = _get_best_id(result,pref_order)
     i_search = np.array(result['SCRIPT_NUMBER_ID'])-1
     ids_list = np.array(result['IDS'],dtype=str)
@@ -848,6 +840,11 @@ def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_c
 
     customSimbad = Simbad()
     customSimbad.TIMEOUT = 600    
+    customSimbad.add_votable_fields('typed_id','ids','flux(U)','flux(B)','flux(V)','flux(R)',\
+                                    'flux(I)','flux(G)','flux(J)','flux(H)',\
+                                    'flux(K)','sp','otype','otype(V)','otype(3)',\
+                                   'parallax','propermotions','ra(2;A;ICRS;J2000;2000)',\
+                                 'dec(2;D;ICRS;J2000;2000)')
 
     # identifies components of binary systems, which require special care
     bin_flag = np.zeros(n_obj,dtype=str)
@@ -864,158 +861,147 @@ def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_c
         
     # this array contains detailed info on how data were retrieved for each star
     program_comments = np.zeros(n_obj,dtype=object)
+    
     if n_obj==1:
-
-        customSimbad.add_votable_fields('typed_id','ids','flux(U)','flux(B)','flux(V)','flux(R)',\
-                                        'flux(I)','flux(G)','flux(J)','flux(H)',\
-                                        'flux(K)','id(HD)','sp','otype','otype(V)','otype(3)',\
-                                       'parallax','propermotions','ra(2;A;ICRS;J2000;2000)',\
-                                     'dec(2;D;ICRS;J2000;2000)',\
-                                     'ra(2;A;FK5;J{0:.3f};2000)'.format(date[0].jyear),\
+        customSimbad.add_votable_fields('ra(2;A;FK5;J{0:.3f};2000)'.format(date[0].jyear),\
                                      'dec(2;D;FK5;J{0:.3f};2000)'.format(date[0].jyear))
-        search = customSimbad.query_objects(name)
-    else:
-        customSimbad.add_votable_fields('typed_id','ids','flux(U)','flux(B)','flux(V)','flux(R)',\
-                                        'flux(I)','flux(G)','flux(J)','flux(H)',\
-                                        'flux(K)','id(HD)','sp','otype','otype(V)','otype(3)',\
-                                       'parallax','propermotions','ra(2;A;ICRS;J2000;2000)',\
-                                     'dec(2;D;ICRS;J2000;2000)')           
-        search = customSimbad.query_objects(name) # vectorized Simbad query
-        search, additional_photometry, i_AB = _fix_binary_names(search,pref_order) # replaces AB entries of binary systems with A components, whenever possible
-        search = _fix_binaries(search,name,bin_flag,customSimbad,verbose=verbose) # removes duplicate entries related to binaries
+        
+        
+    search = customSimbad.query_objects(name) # vectorized Simbad query
+    search, additional_photometry, i_AB = _fix_real_binaries(search,pref_order,customSimbad) # replaces AB entries of binary systems with A components, whenever possible
+    search = _fix_fake_binaries(search,name,bin_flag,customSimbad,verbose=verbose) # replaces null entries of fake A components with single-star entries
+    
+    if verbose: print(' Search ended.')
 
-        if verbose: print(' Search ended.')
-            
-        # moving objects are now explicitly pointed out (and masked, if any previous info was present)
-        if is_there_any_moving_object:
-            search['MAIN_ID'][is_moving] = name[is_moving]
-            search = Table(search, masked=True)
-            for col in search.columns:
-                if col in ['RA_2_A_ICRS_J2000_2000','DEC_2_D_ICRS_J2000_2000','OTYPE_3']:
-                    search[col][is_moving] = ''
-                elif col in ['OTYPE_V','OTYPE']:
-                    search[col][is_moving] = 'Moving object'
-                elif col in ['TYPED_ID','MAIN_ID','PMRA','PMDEC']: continue
-                else: search[col].mask=is_moving
-        
-        
-        # not every star was correctly resolved. Some additional steps are necessary
-        
-        # problem: not every star resolved by SkyCoord.from_name() is resolved by Simbad()
-        # solution: we try again to solve stars starting from their coordinates
-        search['index'] = np.arange(0,n_obj)
-        mask1 = (search['OTYPE_V'] == 'Object of Unknown Nature')
-        name_1 = []
-        if np.sum(mask1)>0:
-            if verbose:
-                print(' Simbad was not able to resolve {0}/{1} input object names which were previously resolved by Sesame.'.format(np.sum(mask1),n_obj))
-                print(' Trying again, only using coordinates and a search radius = {0}'.format(SEARCH_RADIUS))
-            w,=np.where(mask1)
-            for i in w:
-                if verbose:
-                    print('  Star {0}/{1}. Input coordinates: (ra, dec) = ({2},{3}) '.format(i+1,n_obj,coords[i].ra.deg,coords[i].dec.deg))
-                name_1.append(_query_simbad_from_coords(date[i],coords[i],**useful_kwargs,enlarge_query=False))
-            name_1 = np.array(name_1).astype(str)
-            search2 = customSimbad.query_objects(name_1)
-            search2 = _remove_duplicate_entries(search2) # removes duplicate entries related to binaries
-            search2['index'] = w
-            search = vstack((search[~mask1],search2))
-            search.sort('index')
-            del search['index']
-            mask2 = (search['OTYPE_V'] == 'Object of Unknown Nature')
-            if verbose:
-                if np.sum(mask2)<np.sum(mask1):
-                    print(' We were able to recover additional {0} targets.'.format(np.sum(mask1)-np.sum(mask2)))
-                else:
-                    print(' No additional target was recovered. Please carefully inspect input coordinates and names for these stars.')
-        else: mask2 = mask1
-        # a few comments on the results for these stars are saved
-        program_comments[mask2] = 'Object not found. Either 1) wrong coordinates and, if provided, object name; 2) not a star'
-        program_comments[~mask1] = 'Object properly resolved using coordinates and/or object name'
-        program_comments[mask1 & ~mask2] = 'Object not resolved by Simbad, but correctly recovered through its coordinates'
-        if is_there_any_moving_object: program_comments[is_moving] = 'Moving object'
-        if len(i_AB)>0: program_comments[i_AB] = 'Binary resolved using coordinates and/or object name, but later replaced by its A component'
+    # moving objects are now explicitly pointed out (and masked, if any previous info was present)
+    if is_there_any_moving_object:
+        search['MAIN_ID'][is_moving] = name[is_moving]
+        search = Table(search, masked=True)
+        for col in search.columns:
+            if col in ['RA_2_A_ICRS_J2000_2000','DEC_2_D_ICRS_J2000_2000','OTYPE_3']:
+                search[col][is_moving] = ''
+            elif col in ['OTYPE_V','OTYPE']:
+                search[col][is_moving] = 'Moving object'
+            elif col in ['TYPED_ID','MAIN_ID','PMRA','PMDEC']: continue
+            else: search[col].mask=is_moving
 
-        # problem: some stars are resolved but do not have associated photometry
-        # solution: they are likely resolved binaries. Simbad lists entries for whole systems
-        # and entries for individual components. If the components are far enough to be resolved by UBV-based surveys and 2MASS,
-        # no photometry is present. We pick therefore the entries corresponing to 'A' components
-        search['index'] = np.arange(0,n_obj)
-        mask3 = np.ones(n_obj,dtype=bool)        
+
+    # not every star was correctly resolved. Some additional steps are necessary
+
+    # problem: not every star resolved by SkyCoord.from_name() is resolved by Simbad()
+    # solution: we try again to solve stars starting from their coordinates
+    search['index'] = np.arange(0,n_obj)
+    mask1 = (search['OTYPE_V'] == 'Object of Unknown Nature')
+    name_1 = []
+    if np.sum(mask1)>0:
+        if verbose:
+            print(' Simbad was not able to resolve {0}/{1} input object names which were previously resolved by Sesame.'.format(np.sum(mask1),n_obj))
+            print(' Trying again, only using coordinates and a search radius = {0}'.format(SEARCH_RADIUS))
+        w,=np.where(mask1)
+        for i in w:
+            if verbose:
+                print('  Star {0}/{1}. Input coordinates: (ra, dec) = ({2},{3}) '.format(i+1,n_obj,coords[i].ra.deg,coords[i].dec.deg))
+            name_1.append(_query_simbad_from_coords(date[i],coords[i],**useful_kwargs,enlarge_query=False))
+        name_1 = np.array(name_1).astype(str)
+        search2 = customSimbad.query_objects(name_1)
+        search2 = _remove_duplicate_entries(search2) # removes duplicate entries related to binaries
+        search2['index'] = w
+        search = vstack((search[~mask1],search2))
+        search.sort('index')
+        del search['index']
+        mask2 = (search['OTYPE_V'] == 'Object of Unknown Nature')
+        if verbose:
+            if np.sum(mask2)<np.sum(mask1):
+                print(' We were able to recover additional {0} targets.'.format(np.sum(mask1)-np.sum(mask2)))
+            else:
+                print(' No additional target was recovered. Please carefully inspect input coordinates and names for these stars.')
+    else: mask2 = mask1
+    # a few comments on the results for these stars are saved
+    program_comments[mask2] = 'Object not found. Either 1) wrong coordinates and, if provided, object name; 2) not a star'
+    program_comments[~mask1] = 'Object properly resolved using coordinates and/or object name'
+    program_comments[mask1 & ~mask2] = 'Object not resolved by Simbad, but correctly recovered through its coordinates'
+    if is_there_any_moving_object: program_comments[is_moving] = 'Moving object'
+    if len(i_AB)>0: program_comments[i_AB] = 'Object was a resolved binary system with associated photometry. Replaced by its A component'
+
+    # problem: some stars are resolved but do not have associated photometry
+    # solution: they are likely resolved binaries. Simbad lists entries for whole systems
+    # and entries for individual components. If the components are far enough to be resolved by UBV-based surveys and 2MASS,
+    # no photometry is present. We pick therefore the entries corresponing to 'A' components
+    search['index'] = np.arange(0,n_obj)
+    mask3 = np.ones(n_obj,dtype=bool)        
+    for j in range(n_obj):
+        break_photom = False
+        i=0
+        while (break_photom==False) & (i<len(FILTER_COLUMNS)):
+            if np.isnan(search[FILTER_COLUMNS[i]][j])==False:
+                break_photom = True
+                mask3[j] = False
+            i+=1
+    mask3[mask2] = False # We are only interested in resolved stars
+    if is_there_any_moving_object:
+        mask3[is_moving] = False # We also exclude moving objects
+
+    name_3 = []
+    if np.sum(mask3)>0:
+        if verbose:
+            print(' No photometry found for {0}/{1} input objects which were correctly resolved.'.format(np.sum(mask3),n_obj))
+            print(' Likely they are resolved binaries. Trying again, only using coordinates and a search radius = {0}'.format(SEARCH_RADIUS))
+        w,=np.where(mask3)
+        for i in w:
+            if verbose:
+                print('  Star {0}/{1}. Input coordinates: (ra, dec) = ({2},{3}) '.format(i+1,n_obj,coords[i].ra.deg,coords[i].dec.deg))
+            name_3.append(_query_simbad_from_coords(date[i],coords[i],**useful_kwargs,enlarge_query=False))
+        name_3 = np.array(name_3).astype(str)
+        name_3 = np.concatenate((name_3,['Vega']))            
+        search4 = customSimbad.query_objects(name_3)[:-1]
+        search4['index'] = w
+        search = vstack((search[~mask3],search4))
+        search.sort('index')
+        del search['index']
+
+        mask4 = np.ones(n_obj,dtype=bool)
         for j in range(n_obj):
             break_photom = False
             i=0
             while (break_photom==False) & (i<len(FILTER_COLUMNS)):
                 if np.isnan(search[FILTER_COLUMNS[i]][j])==False:
                     break_photom = True
-                    mask3[j] = False
-                i+=1
-        mask3[mask2] = False # We are only interested in resolved stars
+                    mask4[j] = False
+                i+=1        
+        mask4[mask2] = False # We are only interested in resolved stars
         if is_there_any_moving_object:
-            mask3[is_moving] = False # We also exclude moving objects
-        
-        name_3 = []
-        if np.sum(mask3)>0:
+            mask4[is_moving] = False # We also exclude moving objects
+
+        if verbose:
+            if np.sum(mask4)<np.sum(mask3):
+                print(' We were able to recover additional {0} targets.'.format(np.sum(mask3)-np.sum(mask4)))
+            else:
+                print(' No additional target was recovered. No photometry exists for these stars: be careful.')
+    else: mask4 = mask3
+    program_comments[mask4] = 'Object resolved in Simbad, but no photometry could be found'
+    program_comments[mask3 & ~mask4] = 'Object was a resolved binary system with no associated photometry. Replaced by its A component'
+
+    # problem: some stars are simply missing in Simbad because they are too faint
+    # solution: we try to recover them directly from Gaia DR3 and 2MASS using the VizieR resolver
+    mask5 = ((search['OTYPE_V'] == 'Object of Unknown Nature') & (name!='None'))
+    if np.sum(mask5)>0:
+        if verbose:
+            print(' Trying to solve {0}/{1} missing input objects on VizieR (Gaia DR3 + 2MASS).'.format(np.sum(mask3),n_obj))
+        w,=np.where(mask5)
+        for i in w:
             if verbose:
-                print(' No photometry found for {0}/{1} input objects which were correctly resolved.'.format(np.sum(mask3),n_obj))
-                print(' Likely they are resolved binaries. Trying again, only using coordinates and a search radius = {0}'.format(SEARCH_RADIUS))
-            w,=np.where(mask3)
-            for i in w:
-                if verbose:
-                    print('  Star {0}/{1}. Input coordinates: (ra, dec) = ({2},{3}) '.format(i+1,n_obj,coords[i].ra.deg,coords[i].dec.deg))
-                name_3.append(_query_simbad_from_coords(date[i],coords[i],**useful_kwargs,enlarge_query=False))
-            name_3 = np.array(name_3).astype(str)
-            name_3 = np.concatenate((name_3,['Vega']))            
-            search4 = customSimbad.query_objects(name_3)[:-1]
-            search4['index'] = w
-            search = vstack((search[~mask3],search4))
-            search.sort('index')
-            del search['index']
-            
-            mask4 = np.ones(n_obj,dtype=bool)
-            for j in range(n_obj):
-                break_photom = False
-                i=0
-                while (break_photom==False) & (i<len(FILTER_COLUMNS)):
-                    if np.isnan(search[FILTER_COLUMNS[i]][j])==False:
-                        break_photom = True
-                        mask4[j] = False
-                    i+=1        
-            mask4[mask2] = False # We are only interested in resolved stars
-            if is_there_any_moving_object:
-                mask4[is_moving] = False # We also exclude moving objects
-            
-            if verbose:
-                if np.sum(mask4)<np.sum(mask3):
-                    print(' We were able to recover additional {0} targets.'.format(np.sum(mask3)-np.sum(mask4)))
-                else:
-                    print(' No additional target was recovered. No photometry exists for these stars: be careful.')
-        else: mask4 = mask3
-        program_comments[mask4] = 'Object resolved in Simbad, but no photometry could be found'
-        program_comments[mask3 & ~mask4] = 'Object represented a resolved binary system with no associated photometry. Replaced with its A component'
-        
-        # problem: some stars are simply missing in Simbad because they are too faint
-        # solution: we try to recover them directly from Gaia DR3 and 2MASS using the VizieR resolver
-        mask5 = ((search['OTYPE_V'] == 'Object of Unknown Nature') & (name!='None'))
-        if np.sum(mask5)>0:
-            if verbose:
-                print(' Trying to solve {0}/{1} missing input objects on VizieR (Gaia DR3 + 2MASS).'.format(np.sum(mask3),n_obj))
-            w,=np.where(mask5)
-            for i in w:
-                if verbose:
-                    print('  Star {0}/{1}. Input name = {2} '.format(i+1,n_obj,name[i]))
-                search = _vizier_resolver(name[i],coords[i],search,i)
-  
-            mask6 = ((search['OTYPE_V'] == 'Object of Unknown Nature') & (name!='None'))
-            if verbose:
-                if np.sum(mask6)<np.sum(mask5):
-                    print(' We were able to recover additional {0} targets.'.format(np.sum(mask5)-np.sum(mask6)))
-                else:
-                    print(' No additional target was recovered using VizieR.')
-        else: mask6 = mask5
-        program_comments[mask6] = 'Object not resolved by either Simbad or VizieR'
-        program_comments[mask5 & ~mask6] = 'Object not resolved by Simbad but recovered in VizieR'
-        
+                print('  Star {0}/{1}. Input name = {2} '.format(i+1,n_obj,name[i]))
+            search = _vizier_resolver(name[i],coords[i],search,i)
+
+        mask6 = ((search['OTYPE_V'] == 'Object of Unknown Nature') & (name!='None'))
+        if verbose:
+            if np.sum(mask6)<np.sum(mask5):
+                print(' We were able to recover additional {0} targets.'.format(np.sum(mask5)-np.sum(mask6)))
+            else:
+                print(' No additional target was recovered using VizieR.')
+    else: mask6 = mask5
+    program_comments[mask6] = 'Object not resolved by either Simbad or VizieR'
+    program_comments[mask5 & ~mask6] = 'Object not resolved by Simbad but recovered in VizieR'       
 
     # At this point, data for every star should have been collected in one way or another
     
@@ -1070,7 +1056,6 @@ def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_c
     search['BEST_NAME'] = best_names
     search['BIN_FLAG'] = bin_flag
     search['program_comments'] = program_comments
-    
     
 #    del search['IDS']
 
@@ -1133,7 +1118,6 @@ def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_c
                     print(' No photometry was found for {0} stars, so they were rejected.'.format(n_stars_wo_cm))
                 search = Table(search, masked=True)
                 for col in search.columns:
-#                    if col!='TYPED_ID': search[col].mask=~mask
                     if col!='TYPED_ID': search[col].mask[~mask] = True
                 program_comments[(~mask7) & (~mask)] = 'Object info deleted because either 1) no photometry on Simbad; 2) dimmer than limit_G_mag'
                 search['program_comments']= program_comments
@@ -1149,6 +1133,7 @@ def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_c
         
     if len(i_AB)>0:
         simbad_dico['simbad_additional_photometry'] = additional_photometry
+        
     return simbad_dico
         
 
@@ -1232,19 +1217,25 @@ def add_separation_between_pointing_current_position(coords,simbad_dico,verbose=
     """
     try:
         if 'simbad_RA_ICRS' in simbad_dico.keys() and 'simbad_DEC_ICRS' in simbad_dico.keys():
-            coords_ICRS_str = ' '.join([simbad_dico['simbad_RA_ICRS'],simbad_dico['simbad_DEC_ICRS']])
-            coords_ICRS = SkyCoord(coords_ICRS_str,frame=ICRS,unit=(u.hourangle,u.deg))
-            sep_pointing_ICRS = coords.separation(coords_ICRS).to(u.arcsec).value
+            if simbad_dico['simbad_RA_ICRS']!='':
+                coords_ICRS_str = ' '.join([simbad_dico['simbad_RA_ICRS'],simbad_dico['simbad_DEC_ICRS']])
+                coords_ICRS = SkyCoord(coords_ICRS_str,frame=ICRS,unit=(u.hourangle,u.deg))
+                sep_pointing_ICRS = coords.separation(coords_ICRS).to(u.arcsec).value
+            else:
+                sep_pointing_ICRS = np.nan
             simbad_dico['simbad_separation_RADEC_ICRSJ2000'] = sep_pointing_ICRS
         # if we found a star, we add the distance between Simbad current coordinates and pointing
         if 'simbad_RA_current' in simbad_dico.keys() and 'simbad_DEC_current' in simbad_dico.keys():
-            coords_current_str = ' '.join([simbad_dico['simbad_RA_current'],simbad_dico['simbad_DEC_current']])
-            coords_current = SkyCoord(coords_current_str,frame=ICRS,unit=(u.hourangle,u.deg))
-            sep_pointing_current = coords.separation(coords_current).to(u.arcsec).value
+            if simbad_dico['simbad_RA_current']!='':
+                coords_current_str = ' '.join([simbad_dico['simbad_RA_current'],simbad_dico['simbad_DEC_current']])
+                coords_current = SkyCoord(coords_current_str,frame=ICRS,unit=(u.hourangle,u.deg))
+                sep_pointing_current = coords.separation(coords_current).to(u.arcsec).value
+            else:
+                sep_pointing_current = np.nan
             simbad_dico['simbad_separation_RADEC_current']=sep_pointing_current
             if verbose:
                 print('Distance between the current star position and pointing position: {0:.1f}arcsec'.format(simbad_dico['simbad_separation_RADEC_current']))
-    except TypeError:
+    except (TypeError,ValueError):
         n_obj=len(simbad_dico['simbad_MAIN_ID'])
         if 'simbad_RA_ICRS' in simbad_dico.keys() and 'simbad_DEC_ICRS' in simbad_dico.keys():
             sep_pointing_ICRS=[]
@@ -1268,8 +1259,7 @@ def add_separation_between_pointing_current_position(coords,simbad_dico,verbose=
             if verbose:
                 for i in range(n_obj):
                     print('Distance between the current star {1} positions and pointing positions: {0:.1f}arcsec'.format(simbad_dico['simbad_BEST_NAME'][i],simbad_dico['simbad_separation_RADEC_current'][i]))
-
-            
+       
     return simbad_dico
 
 def is_moving_object(header):
