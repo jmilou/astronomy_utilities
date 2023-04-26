@@ -5,9 +5,11 @@ Created on Mon Feb 21 16:22:00 2022
 
 @author: millij
 modified by Johan M with verbose option to avoid printing
-modified by Vito S to allow vectorized queries; to resolve some targets with bad spelling,
-wrong object name, not found in Gaia, or not present in Simbad; 
-to enable a preferred order of naming conventions; to handle binaries
+modified by Vito S to allow vectorized queries; to resolve some targets that have either
+1) bad spelling, 2) wrong object name, 3) no Gaia entry, 4) no Simbad entry; 
+to enable one to set a preferred order of naming conventions; to enable one to
+choose whether to opt, in ambiguous situations, for the brightest or the closest returned star found;
+to handle binaries
 """
 
 import numpy as np
@@ -26,6 +28,7 @@ import os
 from astropy.table import Table, vstack
 import re
 from astroquery.vizier import Vizier
+import copy
 
 
 FILTER_COLUMNS = ['FLUX_G', 'FLUX_V', 'FLUX_R','FLUX_U', 'FLUX_B','FLUX_I','FLUX_J', 'FLUX_H']
@@ -110,10 +113,23 @@ def _get_best_id(simbad_table,pref_order):
     """
     
     best_ids = []
-    n_st = len(simbad_table['IDS'])
     
-    names = np.array([name.replace('NAME ','') for name in simbad_table['IDS'].value.data])
-    default_names = np.array([name.replace('NAME ','') for name in simbad_table['MAIN_ID'].value.data])
+    if isinstance(simbad_table,Table):
+        obj = simbad_table['IDS'].value.data
+        default = simbad_table['MAIN_ID'].value.data
+    elif isinstance(simbad_table,list):
+        obj = simbad_table
+        default = obj
+    elif isinstance(simbad_table,str):
+        obj = [simbad_table]
+        default = obj
+    else:
+        raise TypeError('Only astropy Table, list or str instances are valid inputs.')
+    
+    n_st = len(obj)
+    
+    names = np.array([name.replace('NAME ','') for name in obj])
+    default_names = np.array([name.replace('NAME ','') for name in default])
 
     for i in range(n_st):
         id_list=np.array(names[i].split('|'))
@@ -154,7 +170,7 @@ def _get_best_id(simbad_table,pref_order):
 
     return best_ids
 
-def _fix_binaries(table,objects,bin_flag,SimbadQuery):
+def _fix_binaries(table,objects,bin_flag,SimbadQuery,verbose=False):
     """
     Method not supposed to be used outside the query_simbad method
     Handles binary components that were not resolved by a Simbad query, trying to add the
@@ -180,11 +196,15 @@ def _fix_binaries(table,objects,bin_flag,SimbadQuery):
             ww,=np.where((which_star==objects[i]) & (new_search['MAIN_ID'].value!=''))
             if len(ww)>0:
                 table[i]=new_search[ww[0]]
+                if verbose:
+                    print(" Star {0} is now recovered.".format(new_search['MAIN_ID'][ww[0]]))
             elif bin_flag[i]=='A':
                 ww,=np.where((which_star==objects[i][:-1]) & (new_search['MAIN_ID'].value!=''))
                 if len(ww)>0:
                     table[i]=new_search[ww[0]]
-                
+                    if verbose:
+                        print(" Star {0} had an unnecessary 'A' binary flag in its name but it's now recovered.".format(new_search['MAIN_ID'][ww[0]]))
+
     return table
 
 def query_simbad_from_header(header,**kwargs):
@@ -476,6 +496,106 @@ def _vizier_resolver(name,coords,search,index):
     search['IDS'][index] = saved_names
     return search
 
+def _find_and_delete_binary_ending(string):
+    """
+    Method not supposed to be used outside the query_simbad method.
+    Given a (list of) star name(s), it deletes the 'A' and 'AB' labels
+    that identify binary first components and full systems, respectively.
+    It returns both the binary-polished input and a corresponding array
+    containing the deleted labels.
+    """
+        
+    if string=='': return string,''
+    if isinstance(string,str):
+        new_string = copy.deepcopy(string)
+        bin_flag=''
+        
+        if new_string[-2:]=='AB': new_string=new_string[:-2]
+        new_string = new_string.replace('AB|','|')
+        if new_string!=string: bin_flag = 'AB'
+        new_string1 = copy.deepcopy(new_string)
+
+        if new_string[-1]=='A': new_string=new_string[:-1]
+        new_string = new_string.replace('A|','|')
+        if new_string!=new_string1: bin_flag = 'A'
+        
+        return new_string, bin_flag
+    elif isinstance(string,list):
+        l, bin_flag = [], []
+        for element in string: 
+            s1, s2 = _find_and_delete_binary_ending(element)
+            l.append(s1)
+            bin_flag.append(s2)
+        bin_flag = np.array(bin_flag)
+        return l, bin_flag
+    else: raise TypeError('Only string or list is a valid input type.')
+
+def _fix_binary_names(old_search,pref_order):
+    """
+    Method not supposed to be used outside the query_simbad method
+    Identifies binary stars with both an 'AB' and an 'A' entry
+    and replaces the former with the latter.
+    It also stores the photometry of the unresolved entry in a dictionary.
+    """
+
+    query_coords = np.array([i+' '+j for i,j in zip(old_search['RA'].data,old_search['DEC'].data)])
+    query_coords = np.where(query_coords==' ','00 00 00.0000 -00 00 00.000',query_coords)
+    
+    coords = SkyCoord(query_coords,frame=ICRS,unit=(u.hourangle, u.deg))
+    previous_ids = old_search['IDS']
+    n = len(previous_ids)
+    
+    customSimbad = Simbad()
+    customSimbad.TIMEOUT = 600    
+    customSimbad.add_votable_fields('typed_id','ids','flux(U)','flux(B)','flux(V)','flux(R)',\
+                                'flux(I)','flux(G)','flux(J)','flux(H)',\
+                                'flux(K)','id(HD)','sp','otype','otype(V)','otype(3)',\
+                               'parallax','propermotions','ra(2;A;ICRS;J2000;2000)',\
+                             'dec(2;D;ICRS;J2000;2000)')     
+
+    result = customSimbad.query_region(coords, radius=10*u.arcsec)
+    best_ids = _get_best_id(result,pref_order)
+    i_search = np.array(result['SCRIPT_NUMBER_ID'])-1
+    ids_list = np.array(result['IDS'],dtype=str)
+  
+    previous_ids_nb, bin_flags = _find_and_delete_binary_ending(list(previous_ids))
+    result_ids_nb, bin_flags1 = _find_and_delete_binary_ending(list(ids_list))
+    
+    previous_ids_nb_splitted, result_ids_nb_splitted = [i.split('|') for i in previous_ids_nb], [i.split('|') for i in result_ids_nb]
+    previous_ids_nb_splitted_ord = [previous_ids_nb_splitted[i] for i in i_search]
+
+    true_entry = np.array([len(np.intersect1d(i,j))>0 for i,j in zip(previous_ids_nb_splitted_ord,result_ids_nb_splitted)])
+
+    old_indices = []
+    c=0
+    new_search = copy.deepcopy(old_search)
+    for i in range(n):
+        s = np.searchsorted(i_search,i+1)
+        if (bin_flags[i]=='A') | (s-c<2):
+            c=s
+            continue
+        w = np.arange(c,s)
+        
+        if ('A' not in bin_flags1[w]) | (np.sum(true_entry[w])<2):
+            c=s
+            continue
+        
+        c=s
+        
+        index_A = w[(true_entry[w]) & (bin_flags1[w]=='A')]
+        
+        new_search[i] = result[index_A[0]]
+        old_indices.append(i)
+
+    additional_photometry = {}
+    for f in ['FLUX_U','FLUX_B','FLUX_V','FLUX_R','FLUX_I','FLUX_G','FLUX_J','FLUX_H','FLUX_K']:
+        fluxes = np.full(n,np.nan)
+        fluxes[old_indices] = old_search[f][old_indices]
+        additional_photometry[f] = fluxes
+    
+    return new_search,additional_photometry,old_indices
+
+
 def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_cm=False, verbose=False, pref_order=['HIP','HD','HR'], select='closest', is_moving=None):
     """
     Function that tries to query Simbad to find the object. 
@@ -486,7 +606,7 @@ def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_c
     Input:
         - date: an astropy.time.Time object (e.g. date = Time(header['DATE-OBS']), required.
             If more than one star is queried, date must be initialized as a Time object containing a list of dates.
-        - name: string, numpy array or NoneType, optional. Name(s) of the source(s). If an array, 
+        - name: string, numpy array, list or NoneType, optional. Name(s) of the source(s). If an array, 
             its len() must equal the number of dates/coords provided as input for 'date' and coords'.
             The array can also contain a mixture of valid names and elements = None or ''.
             If name=None, only coordinates are used. The same happens for array elements = None or ''.
@@ -517,12 +637,13 @@ def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_c
             most adequate identifier according to the rule set by 'pref_order'.
     """
     
+    
     # We check that every input is of correct type,
     # ensure that the first three inputs are arrays
     # and compute the number of input objects
     None_type = type(None)
-    if type(name) not in [None_type,str,np.ndarray]:
-        raise TypeError("'name' must be of type str, None or numpy.ndarray.")
+    if type(name) not in [None_type,str,np.ndarray,list]:
+        raise TypeError("'name' must be of type str, None, list or numpy.ndarray.")
     if type(coords) != SkyCoord:
         raise TypeError("'coords' must be a SkyCoord instance.")
     if type(date) != Time:
@@ -546,6 +667,9 @@ def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_c
     # array of moving objects is inizialized to zeros if not provided
     if is_moving is None: is_moving = np.zeros(n_obj,dtype=bool)
     is_there_any_moving_object = np.sum(is_moving)>0
+    
+    # alternative photometry for unresolved binaries will be returned if i_AB is not null at the end
+    i_AB = []
 
     # some useful optional keywords are grouped in a dictionary
     useful_kwargs = {'limit_G_mag':limit_G_mag, 'verbose':verbose, 'pref_order': pref_order, 'select': select}
@@ -582,7 +706,8 @@ def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_c
             print(' Done. \n')
             
     if verbose: print(' Checking accuracy of object names...')
-        
+    
+    
     # some spelling checks are performed upon names
     for i in range(n_obj):
         coord = coords[i]
@@ -737,6 +862,8 @@ def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_c
     if verbose:
         print('Step 2: querying object names on Simbad...')
         
+    # this array contains detailed info on how data were retrieved for each star
+    program_comments = np.zeros(n_obj,dtype=object)
     if n_obj==1:
 
         customSimbad.add_votable_fields('typed_id','ids','flux(U)','flux(B)','flux(V)','flux(R)',\
@@ -754,13 +881,11 @@ def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_c
                                        'parallax','propermotions','ra(2;A;ICRS;J2000;2000)',\
                                      'dec(2;D;ICRS;J2000;2000)')           
         search = customSimbad.query_objects(name) # vectorized Simbad query
-        search = _fix_binaries(search,name,bin_flag,customSimbad) # removes duplicate entries related to binaries
+        search, additional_photometry, i_AB = _fix_binary_names(search,pref_order) # replaces AB entries of binary systems with A components, whenever possible
+        search = _fix_binaries(search,name,bin_flag,customSimbad,verbose=verbose) # removes duplicate entries related to binaries
 
         if verbose: print(' Search ended.')
             
-        # this array contains detailed info on how data were retrieved for each star
-        program_comments = np.zeros(n_obj,dtype=object)
-
         # moving objects are now explicitly pointed out (and masked, if any previous info was present)
         if is_there_any_moving_object:
             search['MAIN_ID'][is_moving] = name[is_moving]
@@ -809,6 +934,7 @@ def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_c
         program_comments[~mask1] = 'Object properly resolved using coordinates and/or object name'
         program_comments[mask1 & ~mask2] = 'Object not resolved by Simbad, but correctly recovered through its coordinates'
         if is_there_any_moving_object: program_comments[is_moving] = 'Moving object'
+        if len(i_AB)>0: program_comments[i_AB] = 'Binary resolved using coordinates and/or object name, but later replaced by its A component'
 
         # problem: some stars are resolved but do not have associated photometry
         # solution: they are likely resolved binaries. Simbad lists entries for whole systems
@@ -946,9 +1072,7 @@ def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_c
     search['program_comments'] = program_comments
     
     
-    
-    
-    del search['IDS']
+#    del search['IDS']
 
     
     # photometric vetting and creation of simbad_dico
@@ -974,6 +1098,8 @@ def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_c
 
             # we add the distance between pointing and current position in the dictionary
             simbad_dico  = add_separation_between_pointing_current_position(coords,simbad_dico)
+            if verbose:
+                print('Step 4: done. Program ended.\n\n')
             return simbad_dico
 
         else:
@@ -1020,8 +1146,11 @@ def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_c
         
         if verbose:
             print('Step 4: done. Program ended.\n\n')
-            
-        return simbad_dico
+        
+    if len(i_AB)>0:
+        simbad_dico['simbad_additional_photometry'] = additional_photometry
+        
+    return simbad_dico
         
 
 def populate_simbad_dico(simbad_search_list,i,simbad_dico):
@@ -1033,7 +1162,7 @@ def populate_simbad_dico(simbad_search_list,i,simbad_dico):
     
     for key in simbad_search_list.keys():
         value = simbad_search_list[key] if i==None else simbad_search_list[key][i]
-        if key in ['MAIN_ID','BEST_NAME','SP_TYPE','ID_HD']:
+        if key in ['MAIN_ID','BEST_NAME','SP_TYPE','ID_HD','IDS']:
             try:
                 simbad_dico['simbad_'+key] = np.array(value.filled(''))
             except AttributeError:
@@ -1184,8 +1313,9 @@ if __name__ == "__main__":
     dec = -24*u.degree
     testCoord = SkyCoord(ra,dec)
     date = Time('2017-01-01T02:00:00.0')
+    name='eps Eri'
     print("Let's query a random coordinates ra={0:s} dec={1:s} with the name {2:s} and see what's happening\n".format(testCoord.ra,testCoord.dec,name))
-    test=query_simbad(date,testCoord,name='eps Eri',limit_G_mag=15)
+    test=query_simbad(date,testCoord,name=name,limit_G_mag=15,verbose=True)
     # for index,key in enumerate(test):
     #     print(key,test[key])
     
@@ -1210,7 +1340,7 @@ if __name__ == "__main__":
     print('\n\n','-'*20)
     h = fits.getheader(os.path.join(path_data,'SPHER.2019-04-01T03-39-17.958IRD_SCIENCE_DBI_RAW.fits'))
     print("Let's query a target from a real SPHERE header\n")
-    test = query_simbad_from_header(h)
+    test = query_simbad_from_header(h,verbose=True)
     
     print('\n\n','-'*20)
     h = fits.getheader(os.path.join(path_data,'SPHER.2019-02-25T03-55-45.738ZPL_SCIENCE_IMAGING_RAW.fits'))
