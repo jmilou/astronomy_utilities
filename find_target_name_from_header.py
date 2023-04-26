@@ -1149,7 +1149,6 @@ def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_c
         
     if len(i_AB)>0:
         simbad_dico['simbad_additional_photometry'] = additional_photometry
-        
     return simbad_dico
         
 
