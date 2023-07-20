@@ -496,7 +496,7 @@ def _vizier_resolver(name,coords,search,index):
     search['IDS'][index] = saved_names
     return search
 
-def _find_and_delete_binary_ending(string,endings=['A']): #NEW KEYWORD endings
+def _find_and_delete_binary_ending(string,endings=['A']):
     """
     Method not supposed to be used outside the query_simbad method.
     Given a (list of) star name(s), it deletes the 'A' and 'AB' labels
@@ -519,14 +519,13 @@ def _find_and_delete_binary_ending(string,endings=['A']): #NEW KEYWORD endings
         new_string = new_string.replace('A|','|')
         if new_string!=new_string1: bin_flag = 'A'
             
-        #newlines
         if 'B' in endings:
             if bin_flag=='':
                 if new_string[-1]=='B': new_string=new_string[:-1]
                 new_string = new_string.replace('B|','|')
                 if new_string!=new_string1: bin_flag = 'B'
-            
         return new_string, bin_flag
+    
     elif isinstance(string,list):
         l, bin_flag = [], []
         for element in string: 
@@ -535,6 +534,7 @@ def _find_and_delete_binary_ending(string,endings=['A']): #NEW KEYWORD endings
             bin_flag.append(s2)
         bin_flag = np.array(bin_flag)
         return l, bin_flag
+    
     else: raise TypeError('Only string or list is a valid input type.')
 
 def _fix_real_binaries(old_search,pref_order,simbad_instance):
