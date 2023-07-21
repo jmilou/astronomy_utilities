@@ -496,7 +496,7 @@ def _vizier_resolver(name,coords,search,index):
     search['IDS'][index] = saved_names
     return search
 
-def _find_and_delete_binary_ending(string):
+def _find_and_delete_binary_ending(string,endings=['A']):
     """
     Method not supposed to be used outside the query_simbad method.
     Given a (list of) star name(s), it deletes the 'A' and 'AB' labels
@@ -518,8 +518,14 @@ def _find_and_delete_binary_ending(string):
         if new_string[-1]=='A': new_string=new_string[:-1]
         new_string = new_string.replace('A|','|')
         if new_string!=new_string1: bin_flag = 'A'
-        
+            
+        if 'B' in endings:
+            if bin_flag=='':
+                if new_string[-1]=='B': new_string=new_string[:-1]
+                new_string = new_string.replace('B|','|')
+                if new_string!=new_string1: bin_flag = 'B'
         return new_string, bin_flag
+    
     elif isinstance(string,list):
         l, bin_flag = [], []
         for element in string: 
@@ -528,6 +534,7 @@ def _find_and_delete_binary_ending(string):
             bin_flag.append(s2)
         bin_flag = np.array(bin_flag)
         return l, bin_flag
+    
     else: raise TypeError('Only string or list is a valid input type.')
 
 def _fix_real_binaries(old_search,pref_order,simbad_instance):
@@ -587,6 +594,42 @@ def _fix_real_binaries(old_search,pref_order,simbad_instance):
     
     return new_search,additional_photometry,old_indices
 
+def _remove_undesired_binaries(old_search,n):
+    """
+    Method not supposed to be used outside the query_simbad method
+    If the number of returned objects is greater than the number of input objects,
+    identifies and removes undesired rows (secondary binary component) which managed to end up in the list.
+    """
+
+    if len(old_search)==n: return old_search
+    else:
+        previous_ids, search_index = old_search['IDS'], np.array(old_search['SCRIPT_NUMBER_ID'])
+        previous_order = np.arange(len(previous_ids))
+
+        previous_ids_nb, bin_flags = _find_and_delete_binary_ending(list(previous_ids),endings=['A','B'])
+        
+        flags_to_test = ['A','AB','']
+        
+        good_ind = []
+        for i in range(max(search_index)):
+            w,=np.where(search_index==i+1)
+            if len(w)>1:
+                found, j = False, 0
+                while (found==False) & (j<3):
+                    w1,=np.where(bin_flags[w]==flags_to_test[j])
+                    if len(w1)>0: found = True
+                    j+=1
+                w2 = w[w1[0]] if found else w[0]
+                good_ind.append(w2)
+            elif len(w)==1:
+                good_ind.append(w[0])
+        w,=np.where(search_index==0)
+        if len(w)>0: good_ind.extend(w)
+        good_ind = np.array(good_ind)
+        new_order = np.sort(previous_order[good_ind])        
+
+        return old_search[new_order]        
+        
 
 def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_cm=False, verbose=False, pref_order=['HIP','HD','HR'], select='closest', is_moving=None):
     """
@@ -624,8 +667,8 @@ def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_c
         - is_moving: numpy array of dtype bool, optional. A boolean array indicating whether each star is a moving object or not.
             Moving objects will not be queried.
     Output:
-        - a dictionary with the most interesting simbad keywords and the original 
-            RA, DEC coordinates from the pointing position. A new keyword 'simbad_BEST_NAME' indicates the
+        - a dictionary with the most interesting simbad keywords and the distance between current 
+            RA, DEC coordinates and the pointing position. A new keyword 'simbad_BEST_NAME' indicates the
             most adequate identifier according to the rule set by 'pref_order'.
     """
     
@@ -866,8 +909,10 @@ def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_c
         customSimbad.add_votable_fields('ra(2;A;FK5;J{0:.3f};2000)'.format(date[0].jyear),\
                                      'dec(2;D;FK5;J{0:.3f};2000)'.format(date[0].jyear))
         
-        
+    
     search = customSimbad.query_objects(name) # vectorized Simbad query
+    search = _remove_undesired_binaries(search,len(name)) #ensures that we have exactly one object per queried star        
+        
     search, additional_photometry, i_AB = _fix_real_binaries(search,pref_order,customSimbad) # replaces AB entries of binary systems with A components, whenever possible
     search = _fix_fake_binaries(search,name,bin_flag,customSimbad,verbose=verbose) # replaces null entries of fake A components with single-star entries
     
