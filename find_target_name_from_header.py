@@ -1211,7 +1211,7 @@ def populate_simbad_dico(simbad_search_list,i,simbad_dico):
                 simbad_dico['simbad_'+key] = np.array(value.filled('?'))
             except AttributeError:
                 simbad_dico['simbad_'+key] = np.array(value)
-        elif key.startswith('FLUX_'):
+        elif key.startswith('FLUX_') or key in ['PLX_VALUE','PLX_ERROR']:
             try:
                 simbad_dico['simbad_'+key] = np.array(value.filled(np.nan),dtype=float)
             except AttributeError:
