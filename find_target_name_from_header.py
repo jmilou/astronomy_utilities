@@ -273,7 +273,7 @@ def _query_simbad_from_coords(date,coords,force_verbose=None,**kwargs):
     customSimbad.add_votable_fields('typed_id','ids','flux(U)','flux(B)','flux(V)','flux(R)',\
                                     'flux(I)','flux(G)','flux(J)','flux(H)',\
                                     'flux(K)','sp','otype','otype(V)','otype(3)',\
-                                   'parallax','propermotions','ra(2;A;ICRS;J2000;2000)',\
+                                   'parallax','plx_error','propermotions','ra(2;A;ICRS;J2000;2000)',\
                                  'dec(2;D;ICRS;J2000;2000)',\
                                  'ra(2;A;FK5;J{0:.3f};2000)'.format(date.jyear),\
                                  'dec(2;D;FK5;J{0:.3f};2000)'.format(date.jyear))
@@ -886,7 +886,7 @@ def query_simbad(date, coords, name=None, limit_G_mag=15, metadata=None, force_c
     customSimbad.add_votable_fields('typed_id','ids','flux(U)','flux(B)','flux(V)','flux(R)',\
                                     'flux(I)','flux(G)','flux(J)','flux(H)',\
                                     'flux(K)','sp','otype','otype(V)','otype(3)',\
-                                   'parallax','propermotions','ra(2;A;ICRS;J2000;2000)',\
+                                   'parallax','plx_error','propermotions','ra(2;A;ICRS;J2000;2000)',\
                                  'dec(2;D;ICRS;J2000;2000)')
 
     # identifies components of binary systems, which require special care
@@ -1211,12 +1211,7 @@ def populate_simbad_dico(simbad_search_list,i,simbad_dico):
                 simbad_dico['simbad_'+key] = np.array(value.filled('?'))
             except AttributeError:
                 simbad_dico['simbad_'+key] = np.array(value)
-        elif key.startswith('FLUX_') or key in ['PLX_VALUE','PLX_ERROR']:
-            try:
-                simbad_dico['simbad_'+key] = np.array(value.filled(np.nan),dtype=float)
-            except AttributeError:
-                simbad_dico['simbad_'+key] = np.array(value,dtype=float)
-        elif key in ['PMDEC','PMRA']:
+        elif key.startswith('FLUX_') or key in ['PMDEC','PMRA','PLX_VALUE','PLX_ERROR']:
             try:
                 simbad_dico['simbad_'+key] = np.array(value.filled(np.nan),dtype=float)
             except AttributeError:
